@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Block Paint",
-    "author": "Claude",
-    "version": (3, 4, 2),
+    "author": "Switch",
+    "version": (0, 1, 0),
     "blender": (5, 2, 0),
     "location": "3D View: Ctrl+Shift+B / панель N > Block Paint",
     "description": "Block Paint: 0.5 м XY-сетка и реальные Z-слои блоков",
