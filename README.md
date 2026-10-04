@@ -1,4 +1,9 @@
-# Block Painter (Early Beta / Raw Project)
+
+Пример работы плагина: https://www.reddit.com/r/blender/s/SyfM8JcdSh
+
+
+# Block Painter (Early Beta / Raw Project) 
+
 
 **Block Painter** is a simple, experimental Blender plugin for building with blocks on a grid, similar to Minecraft mechanics. I made it for myself to stop copy-pasting every single wall and floor by hand.
 
