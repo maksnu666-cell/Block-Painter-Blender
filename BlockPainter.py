@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Block Painter",
     "author": "Switch",
-    "version": (0, 1, 2),
+    "version": (0, 1, 3),
     "blender": (5, 2, 0),
     "location": "3D View: Ctrl+Shift+B / панель N > Block Paint",
     "description": "Block Paint: 0.5 м XY-сетка и реальные Z-слои блоков",
@@ -39,6 +39,11 @@ STAIRS_AUTO_FLIP = True
 # обычным лестницам. Если соседей нет, ставится как обычная лестница (по взгляду).
 CORNER_WORDS = ("angle", "corner")
 CORNER_AUTO = True
+
+# Вертикальные плиты (тонкий стоячий блок, например 1 x 0.5 x 1): сами поворачиваются
+# так, чтобы широкой стороной смотреть на игрока, независимо от поворота ассета.
+# Если хочешь, чтобы они ставились по старому правилу (просто по взгляду), поставь False.
+VERTICAL_SLAB_AUTO = True
 
 
 def _rot_cardinal(v, yaw, flip):
@@ -161,6 +166,7 @@ class BP_PT_panel(bpy.types.Panel):
                   "Имя с Stairs+Angle: угловой блок сам встаёт по соседним лестницам",
                   "ЛКМ - рисовать один фиксированный слой",
                   "Новый слой: отпусти ЛКМ и нажми по верхней грани",
+                  "Тонкая плита: клик у края грани - к краю, в середине - по центру",
                   "Ctrl+ЛКМ - стирать",
                   "Shift+ЛКМ - выбирать по одному (Shift+Ctrl - снять)",
                   "Alt+ЛКМ - рамка: выбирает один слой, насквозь не берёт",
@@ -314,6 +320,8 @@ class BP_OT_run(bpy.types.Operator):
         self.cur_flip = False     # перевернуть лестницу (ставится снизу / на верхнюю половину грани)
         self.hit_flip = False
         self.hit_upper = False    # клик пришёл в верхнюю половину боковой грани
+        self.hit_zone = (0, 0)    # куда на грани кликнули по X / Y: -1 край, 0 центр, 1 край
+        self.stroke_off = (0.0, 0.0)   # сдвиг блоков внутри клетки для текущего мазка
         self.block_info = {}      # клетка -> (центр, поворот): чтобы отмена возвращала блок точно
         self.ex_items = []
 
@@ -425,6 +433,23 @@ class BP_OT_run(bpy.types.Operator):
         for yaw in range(4):
             if _rot_cardinal(sh[1], yaw, flip) == want:
                 return yaw
+        return view_q % 4
+
+    def slab_yaw(self, tmpl, view_q):
+        """Вертикальная плита (тонкая по одной горизонтальной оси и высокая): поворачиваем
+        её так, чтобы тонкая сторона шла вдоль взгляда, а широкая смотрела на игрока.
+        Для всех остальных блоков возвращаем обычный поворот по взгляду."""
+        if not VERTICAL_SLAB_AUTO:
+            return view_q % 4
+        d = self.template_dimensions_world(tmpl)
+        wide, thin = max(d.x, d.y), min(d.x, d.y)
+        if thin > 0.8 * wide or d.z < 0.9 * wide:
+            return view_q % 4
+        ty = 0 if d.x < d.y else 1                 # по какой оси шаблон тонкий
+        want = 1 - (view_q & 1)                    # вдоль взгляда: Y при q чётном, X при нечётном
+        for yaw in (view_q, view_q + 1, view_q + 3):
+            if (ty ^ (yaw & 1)) == want:
+                return yaw % 4
         return view_q % 4
 
     def _shape_of(self, tmpl):
@@ -690,6 +715,18 @@ class BP_OT_run(bpy.types.Operator):
         lo, hi = self.block_bounds_world(ob)
         self.hit_upper = (axis != 2) and hit_loc.z > (lo.z + hi.z) / 2.0 + 1e-6
 
+        # Куда на грани попал клик (по трети клетки): у края - тонкий блок прижмётся
+        # к этому краю, в середине - встанет по центру клетки.
+        g = self.grid_size
+        zones = [0, 0]
+        for a in (0, 1):
+            if a == axis:
+                continue
+            cc = round(c[a] / g) * g
+            t = (hit_loc[a] - (cc - g / 2.0)) / g
+            zones[a] = -1 if t < 1.0 / 3.0 else (1 if t > 2.0 / 3.0 else 0)
+        self.hit_zone = (zones[0], zones[1])
+
         # Правила майнкрафта: низ блока или ВЕРХНЯЯ половина боковой грани = перевёрнутая
         # лестница; верх блока или нижняя половина боковой грани = обычная.
         if axis == 2:
@@ -735,6 +772,7 @@ class BP_OT_run(bpy.types.Operator):
         y = int(math.floor(p.y / self.grid_size + 0.5))
         self.hit_flip = False
         self.hit_upper = False
+        self.hit_zone = (0, 0)
         return (x, y, layer_z), 2, 1, None, plane_z
 
     def target_from_click(self, event):
@@ -864,6 +902,8 @@ class BP_OT_run(bpy.types.Operator):
             flip = False
         elif yaw_given is None and not self.is_corner(tmpl):
             yaw = self.stairs_yaw(tmpl, yaw, flip)
+        if yaw_given is None and not self.is_stairs(tmpl):
+            yaw = self.slab_yaw(tmpl, yaw)
 
         tmpl_lo, tmpl_hi = self.block_bounds_world(tmpl)
         tmpl_size = tmpl_hi - tmpl_lo
@@ -905,8 +945,21 @@ class BP_OT_run(bpy.types.Operator):
                     desired_x = round(sc.x / self.grid_size) * self.grid_size
                     desired_bottom_z = s_lo.z if placement_z is None else placement_z
 
+                # Тонкий блок прижимается к краю клетки, если кликнули у края грани.
+                g = self.grid_size
+                zx, zy = self.hit_zone
+                if support_axis != 0 and zx and tmpl_size.x < g - 1e-4:
+                    desired_x += zx * (g - tmpl_size.x) / 2.0
+                if support_axis != 1 and zy and tmpl_size.y < g - 1e-4:
+                    desired_y += zy * (g - tmpl_size.y) / 2.0
+                # Остальные блоки мазка встают с тем же сдвигом внутри клетки.
+                self.stroke_off = (desired_x - cell[0] * g, desired_y - cell[1] * g)
+
             elif placement_z is not None:
                 desired_bottom_z = placement_z
+                if self.painting:
+                    desired_x += self.stroke_off[0]
+                    desired_y += self.stroke_off[1]
 
             desired_center = Vector((desired_x, desired_y, desired_bottom_z + tmpl_size.z / 2.0))
 
@@ -1054,6 +1107,7 @@ class BP_OT_run(bpy.types.Operator):
         self.cur_flip = self.hit_flip      # лестницы: снизу / верхняя половина грани = перевёрнуты
         self.axis, self.sign = axis, sign
         self.fixed = cell[axis]
+        self.stroke_off = (0.0, 0.0)
         self.painting = True
         self.last = None
         self.anchor = self.mouse.copy()
