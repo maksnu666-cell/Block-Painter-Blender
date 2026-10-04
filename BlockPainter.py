@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Block Painter",
     "author": "Switch",
-    "version": (0, 1, 1),
+    "version": (0, 1, 2),
     "blender": (5, 2, 0),
     "location": "3D View: Ctrl+Shift+B / панель N > Block Paint",
     "description": "Block Paint: 0.5 м XY-сетка и реальные Z-слои блоков",
@@ -313,6 +313,7 @@ class BP_OT_run(bpy.types.Operator):
         self.cur_q = 0            # поворот новых блоков: 0..3 четверти по 90 градусов
         self.cur_flip = False     # перевернуть лестницу (ставится снизу / на верхнюю половину грани)
         self.hit_flip = False
+        self.hit_upper = False    # клик пришёл в верхнюю половину боковой грани
         self.block_info = {}      # клетка -> (центр, поворот): чтобы отмена возвращала блок точно
         self.ex_items = []
 
@@ -687,6 +688,7 @@ class BP_OT_run(bpy.types.Operator):
         x = int(round(c.x / self.grid_size))
         y = int(round(c.y / self.grid_size))
         lo, hi = self.block_bounds_world(ob)
+        self.hit_upper = (axis != 2) and hit_loc.z > (lo.z + hi.z) / 2.0 + 1e-6
 
         # Правила майнкрафта: низ блока или ВЕРХНЯЯ половина боковой грани = перевёрнутая
         # лестница; верх блока или нижняя половина боковой грани = обычная.
@@ -732,6 +734,7 @@ class BP_OT_run(bpy.types.Operator):
         x = int(math.floor(p.x / self.grid_size + 0.5))
         y = int(math.floor(p.y / self.grid_size + 0.5))
         self.hit_flip = False
+        self.hit_upper = False
         return (x, y, layer_z), 2, 1, None, plane_z
 
     def target_from_click(self, event):
@@ -892,7 +895,7 @@ class BP_OT_run(bpy.types.Operator):
                     else:
                         desired_x = s_lo.x - tmpl_size.x / 2.0
                     desired_y = round(sc.y / self.grid_size) * self.grid_size
-                    desired_bottom_z = s_lo.z
+                    desired_bottom_z = s_lo.z if placement_z is None else placement_z
 
                 elif support_axis == 1:
                     if support_sign > 0:
@@ -900,7 +903,7 @@ class BP_OT_run(bpy.types.Operator):
                     else:
                         desired_y = s_lo.y - tmpl_size.y / 2.0
                     desired_x = round(sc.x / self.grid_size) * self.grid_size
-                    desired_bottom_z = s_lo.z
+                    desired_bottom_z = s_lo.z if placement_z is None else placement_z
 
             elif placement_z is not None:
                 desired_bottom_z = placement_z
@@ -1059,6 +1062,13 @@ class BP_OT_run(bpy.types.Operator):
         bottom_z = face_z
         if axis == 2 and sign < 0:   # вниз: низ нового слоя = грань минус высота блока
             bottom_z = face_z - self.template_dimensions_world(self.pick_template()).z
+        # Плиты (ниже опоры): боковая грань - верхняя половина = плита сверху,
+        # нижняя половина = плита снизу, как в майнкрафте.
+        if axis != 2 and self.hit_upper and support_ob is not None:
+            s_lo, s_hi = self.block_bounds_world(support_ob)
+            h = self.template_dimensions_world(self.pick_template()).z
+            if h < (s_hi.z - s_lo.z) - 1e-4:
+                bottom_z = s_hi.z - h
         self.paint_plane_z = face_z       # плоскость, на которую проецируем мышь
         if axis != 2:
             # Старт с боковой грани: плоскость рисования на середине высоты нового
