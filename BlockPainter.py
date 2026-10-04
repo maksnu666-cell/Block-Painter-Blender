@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Block Painter",
     "author": "Switch",
-    "version": (0, 1, 3),
+    "version": (0, 1, 4),
     "blender": (5, 2, 0),
     "location": "3D View: Ctrl+Shift+B / панель N > Block Paint",
     "description": "Block Paint: 0.5 м XY-сетка и реальные Z-слои блоков",
@@ -99,6 +99,88 @@ HINT = ("Block Paint:  ЛКМ ставить | Ctrl+ЛКМ стереть | Shif
         "Z размножить | C выемка | F залить | X удалить выбранное | Ctrl+Z отмена | Esc выход")
 
 
+# ======================= связь ассет <-> блоки =======================
+# Каждый блок, поставленный инструментом, использует ТОТ ЖЕ Mesh, что и его ассет
+# (linked duplicate). Поэтому материал / текстура / UV, назначенные на меш ассета,
+# сразу видны на всех блоках этого ассета, независимо от порядка действий.
+
+def _template_for_block(ob, palette):
+    """Ассет, из которого сделан блок: сначала по имени объекта, потом по имени меша."""
+    name = ob.get("bp_template_name")
+    if name:
+        t = palette.get(name)
+        if t is None:
+            t = bpy.data.objects.get(name)
+        if t is not None and t.type == 'MESH' and t is not ob and not t.get("bp_generated"):
+            return t
+    dn = ob.get("bp_template_data")
+    if dn:
+        for t in palette.values():
+            if t.data is not None and t.data.name == dn and t is not ob:
+                return t
+    return None
+
+
+def _same_geometry(a, b, eps=1e-5):
+    """Меши одинаковой формы? Чтобы не затереть блок, который правили в Edit Mode."""
+    if a is b:
+        return True
+    if len(a.vertices) != len(b.vertices) or len(a.polygons) != len(b.polygons):
+        return False
+    for va, vb in zip(a.vertices, b.vertices):
+        if (va.co - vb.co).length > eps:
+            return False
+    return True
+
+
+def _sync_slots(ob, t):
+    """Слоты материалов с привязкой к объекту (link=OBJECT) на общий меш не влияют,
+    поэтому копируем их с ассета вручную."""
+    changed = False
+    n = min(len(ob.material_slots), len(t.material_slots))
+    for i in range(n):
+        ts = t.material_slots[i]
+        bs = ob.material_slots[i]
+        if bs.link != ts.link:
+            bs.link = ts.link
+            changed = True
+        if ts.link == 'OBJECT' and bs.material != ts.material:
+            bs.material = ts.material
+            changed = True
+    return changed
+
+
+def bp_relink_blocks(scene):
+    """Привязать все построенные блоки к мешу их ассета.
+    Возвращает (перепривязано, обновлено слотов, пропущено из-за изменённой формы)."""
+    palette = {b.obj.name: b.obj for b in scene.bp_blocks
+               if b.obj is not None and b.obj.type == 'MESH'}
+    relinked = synced = skipped = 0
+    old_meshes = set()
+    for ob in scene.objects:
+        if ob.type != 'MESH' or not ob.get("bp_generated"):
+            continue
+        t = _template_for_block(ob, palette)
+        if t is None or t.data is None or ob.data is None:
+            continue
+        if ob.data is not t.data:
+            if not _same_geometry(ob.data, t.data):
+                skipped += 1
+                continue
+            old_meshes.add(ob.data)
+            ob.data = t.data
+            relinked += 1
+        if _sync_slots(ob, t):
+            synced += 1
+    for m in old_meshes:
+        if m.users == 0:
+            try:
+                bpy.data.meshes.remove(m)
+            except Exception:
+                pass
+    return relinked, synced, skipped
+
+
 # ======================= данные и интерфейс =======================
 
 class BP_Block(bpy.types.PropertyGroup):
@@ -144,6 +226,20 @@ class BP_OT_remove(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class BP_OT_relink(bpy.types.Operator):
+    """Привязать построенные блоки к их ассетам (материал/текстура общие)"""
+    bl_idname = "bpaint.relink_blocks"
+    bl_label = "Связать блоки с ассетами"
+
+    def execute(self, context):
+        relinked, synced, skipped = bp_relink_blocks(context.scene)
+        msg = "Привязано блоков: %d, слотов обновлено: %d" % (relinked, synced)
+        if skipped:
+            msg += ", пропущено (форма изменена): %d" % skipped
+        self.report({'INFO'}, msg)
+        return {'FINISHED'}
+
+
 class BP_PT_panel(bpy.types.Panel):
     bl_label = "Block Paint"
     bl_space_type = 'VIEW_3D'
@@ -160,6 +256,7 @@ class BP_PT_panel(bpy.types.Panel):
         col = row.column(align=True)
         col.operator("bpaint.add_selected", icon='ADD', text="")
         col.operator("bpaint.remove_block", icon='REMOVE', text="")
+        lay.operator("bpaint.relink_blocks", icon='LINKED')
         box = lay.box()
         for t in ("Блоки сами поворачиваются лицом к тебе (по 90)",
                   "Имя с Stairs: снизу / верх грани - вверх ногами",
@@ -291,6 +388,12 @@ class BP_OT_run(bpy.types.Operator):
                 if t is not None:
                     ob["bp_template_data"] = t.data.name if t.data else ""
                     ob["bp_template_name"] = t.name
+
+        # Старые блоки (с отдельными копиями меша) привязываем к ассетам.
+        try:
+            bp_relink_blocks(sc)
+        except Exception as e:
+            print("Block Paint: relink failed:", e)
 
         self.painting = self.erasing = self.selecting = self.boxsel = False
         self.sel_remove = False
@@ -979,9 +1082,9 @@ class BP_OT_run(bpy.types.Operator):
         if self.overlaps(desired_center, tmpl_size):
             return None   # блок не проходит сквозь другие
 
+        # Object.copy() оставляет общий Mesh: блок остаётся связан с ассетом,
+        # и смена материала/текстуры на ассете видна на всех его блоках.
         new = tmpl.copy()
-        if tmpl.data is not None:
-            new.data = tmpl.data.copy()
 
         new["bp_generated"] = True
         new["bp_template_data"] = tmpl.data.name if tmpl.data else ""
@@ -1591,7 +1694,7 @@ class BP_OT_run(bpy.types.Operator):
 
 # ======================= регистрация =======================
 
-classes = (BP_Block, BP_UL_blocks, BP_OT_add_selected, BP_OT_remove, BP_PT_panel, BP_OT_run)
+classes = (BP_Block, BP_UL_blocks, BP_OT_add_selected, BP_OT_remove, BP_OT_relink, BP_PT_panel, BP_OT_run)
 addon_keymaps = []
 
 
