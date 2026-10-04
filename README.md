@@ -1,5 +1,6 @@
 
-Demo video: https://www.reddit.com/r/blender/s/SyfM8JcdSh
+Demo video Reddit: https://www.reddit.com/r/blender/s/SyfM8JcdSh 
+Demo video YouTube: https://www.youtube.com/watch?v=nECiPxgk1DI
 
 
 # Block Painter (Early Beta / Raw Project) 
