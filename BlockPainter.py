@@ -1,5 +1,5 @@
 bl_info = {
-    "name": "Block Paint",
+    "name": "Block Painter",
     "author": "Switch",
     "version": (0, 1, 0),
     "blender": (5, 2, 0),
