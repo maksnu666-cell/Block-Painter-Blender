@@ -22,44 +22,39 @@ Demo video: https://www.reddit.com/r/blender/s/SyfM8JcdSh
 
 If you decide to try it, keep in mind that you might need to adjust your assets or settings individually to make it work correctly on your setup. 
 
-Быстрый старт
-Создай куб (Shift+A → Mesh → Cube) размером 1×1×1 м и проверь это в N → Item → Dimensions.
-Открой панель N → вкладка Block Paint.
-Выдели куб и нажми + справа от списка ассетов. Он попадёт в палитру.
-Нажми «Рисовать» или Ctrl+Shift+B.
-Рисуй левой кнопкой мыши. Выход: Esc 
+Quick Start
+Create a cube (Shift+A → Mesh → Cube). In the operator panel at the bottom left, set Size to 1 m, then check N → Item → Dimensions: it should read 1 × 1 × 1 m.
+Open the N panel → Block Paint tab.
+Select the cube and click + next to the asset list. It will be added to the palette.
+Click "Paint" or press Ctrl+Shift+B.
+Paint with the left mouse button. Exit: Esc.
+How It Works
+One stroke paints one layer. Hold LMB and move the mouse: blocks are placed at the same height. To build the next layer, release the button and click on the top face of a block.
+Walls. Click on the side face of an existing block, and new blocks grow outward from it.
+Rotation. Blocks automatically rotate to face you in 90° steps.
+Stairs. If the asset's name contains the word stair (any case, anywhere in the name), it behaves like a Minecraft staircase. If you place it on the underside of a block or on the upper half of a side face, it will be flipped upside down.
+Corner stairs. If the name contains stair plus angle or corner (for example stairs_corner), the block picks its rotation and flip automatically based on neighboring stairs. If there are no neighbors, it is placed as a regular staircase.
+Blocks are persistent. After you exit with Esc, the blocks stay in the scene, and the add-on picks them up again the next time you run it.
+Settings in the Code
 
+There are a few values at the top of the file that you can change:
 
-Как это работает
-Один мазок рисует один слой. Зажал ЛКМ и повёл мышь: блоки встают на одной высоте. Чтобы построить следующий слой, отпусти кнопку и нажми по верхней грани блока.
-Стены. Нажми на боковую грань существующего блока, и блоки пойдут наружу от неё.
-Поворот. Блоки сами поворачиваются лицом к тебе с шагом 90°.
-Лестницы. Если в имени ассета есть слово stair (в любом регистре и в любом месте), он ведёт себя как лестница в Майнкрафте. Если ставить его снизу блока или на верхнюю половину боковой грани, он будет перевёрнут.
-Угловые лестницы. Если в имени есть stair и ещё angle или corner (например stairs_corner), блок сам выбирает поворот и переворот по соседним лестницам. Если соседей нет, он ставится как обычная лестница.
-Блоки сохраняются. После выхода по Esc блоки остаются в сцене, и при повторном запуске плагин снова с ними работает. 
+Parameter	What it does
+GRID_SIZE = 1	Grid step on X and Y, in meters. It must match the size of your asset: a 1×1×1 m cube needs a step of 1.
+Z_KEY_STEP = 0.5	Height key step. It lets slabs and blocks of different heights occupy separate layers. Usually there's no need to change it.
+STAIRS_TAG = "stair"	The word in an asset's name that makes it count as a staircase.
+STAIRS_AUTO_FLIP = True	Automatic stair flipping. False: stairs are always placed like regular blocks.
+CORNER_WORDS = ("angle", "corner")	Words in the name that mark a block as a corner staircase.
+CORNER_AUTO = True	Automatic rotation of corner stairs. False: they are placed like regular stairs.
 
+You can change the launch hotkey in the register() function: look for the line with 'B', 'PRESS', ctrl=True, shift=True.
 
-Настройки в коде
+If Blocks Are Placed With Gaps or Unevenly
 
-В начале файла есть несколько значений, которые можно поменять:
+Almost always the cause is the asset's size, not the project settings.
 
-Параметр	Что делает
-GRID_SIZE = 1	Шаг сетки по X и Y, в метрах. Он должен совпадать с размером твоего ассета: куб 1×1×1 м требует шаг 1.
-Z_KEY_STEP = 0.5	Шаг ключей по высоте. Нужен, чтобы плиты и блоки разной высоты были разными слоями. Обычно трогать не нужно.
-STAIRS_TAG = "stair"	Слово в имени ассета, по которому блок считается лестницей.
-STAIRS_AUTO_FLIP = True	Автоматический переворот лестниц. False: лестницы всегда ставятся как обычные блоки.
-CORNER_WORDS = ("angle", "corner")	Слова в имени, по которым блок считается угловой лестницей.
-CORNER_AUTO = True	Автоопределение поворота угловых лестниц. False: они ставятся как обычные лестницы.
-
-Горячую клавишу запуска можно поменять в функции register(): строка с 'B', 'PRESS', ctrl=True, shift=True.
-
-Если блоки ставятся с щелями или неровно
-
-Почти всегда причина в размере ассета, а не в настройках проекта.
-
-Проверь N → Item → Dimensions: там должно быть значение, равное GRID_SIZE по всем осям.
-Если масштаб не равен 1, примени его: Ctrl+A → Scale.
-Стандартный куб Blender имеет размер 2×2×2 м. Новый куб из Shift+A → Mesh → Cube имеет размер 1×1×1 (если поменять размер при создании, он тоже изменится).
-Проверь, что у ассета нет родителя и нет Delta Scale, а поворот кратен 90°.
-Если блоки нужны другого размера, например 0.5 м, поставь GRID_SIZE = 0.5.
-
+Check N → Item → Dimensions: the values should equal GRID_SIZE on all axes.
+If the scale is not 1, apply it: Ctrl+A → Scale.
+Blender's default cube is 2×2×2 m, and a cube added with Shift+A → Mesh → Cube is also 2 m by default. Set its Size to 1 m in the Adjust Last Operation panel, or set GRID_SIZE = 2 to match.
+Make sure the asset has no parent and no Delta Scale, and that its rotation is a multiple of 90°.
+If you want blocks of a different size, for example 0.5 m, set GRID_SIZE = 0.5.
