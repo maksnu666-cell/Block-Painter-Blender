@@ -1,5 +1,5 @@
 
-Пример работы плагина: https://www.reddit.com/r/blender/s/SyfM8JcdSh
+Demo video: https://www.reddit.com/r/blender/s/SyfM8JcdSh
 
 
 # Block Painter (Early Beta / Raw Project) 
