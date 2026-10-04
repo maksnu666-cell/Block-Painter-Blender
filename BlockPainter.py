@@ -1,6 +1,6 @@
 bl_info = {
     "name": "Block Painter",
-    "author": "Claude",
+    "author": "Switch",
     "version": (0, 1, 1),
     "blender": (5, 2, 0),
     "location": "3D View: Ctrl+Shift+B / панель N > Block Paint",
